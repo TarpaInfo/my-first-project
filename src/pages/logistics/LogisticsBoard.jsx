@@ -4,7 +4,6 @@ import {
   RotateCw,
   CheckCircle2,
   Clock,
-  Send,
   AlertCircle,
   X,
   FileCheck,
@@ -12,20 +11,35 @@ import {
   Calendar,
   FileText,
   UserCheck,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import axiosClient from "../../api/axiosClient";
 import { bookingApi } from "../../api/bookingApi";
+import { useModal } from "../../context/ModalContext";
 import StaffPaperworkModal from "../../components/modals/StaffPaperworkModal";
 import TripDetailsModal from "../../components/modals/TripDetailsModal";
 import AssignStaffModal from "../../components/modals/AssignStaffModal";
+import NewTripModal from "../../components/modals/NewTripModal";
 
 export default function LogisticsBoard() {
+  const { openNewTripModal } = useModal();
   const [logisticsList, setLogisticsList] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTab, setFilterTab] = useState("ALL"); // 'ALL' | 'PENDING' | 'CONFIRMED'
   const [loadingIds, setLoadingIds] = useState([]);
+  const [isLoadingTable, setIsLoadingTable] = useState(false);
   const [errorBanner, setErrorBanner] = useState("");
   const [successBanner, setSuccessBanner] = useState("");
+
+  // Server-side pagination state
+  const [pagination, setPagination] = useState({
+    page: 0,
+    size: 10,
+    totalPages: 0,
+    totalElements: 0,
+  });
 
   // Modals state
   const [selectedBookingForDocs, setSelectedBookingForDocs] = useState(null);
@@ -37,73 +51,87 @@ export default function LogisticsBoard() {
   const [selectedBookingForStaff, setSelectedBookingForStaff] = useState(null);
   const [isStaffAssignOpen, setIsStaffAssignOpen] = useState(false);
 
-  // 1. Fetch live bookings from Spring Boot
-  const fetchLiveLogistics = async () => {
+  // 1. Fetch live paginated bookings from Spring Boot
+  const fetchLiveLogistics = async (targetPage = pagination.page) => {
+    setIsLoadingTable(true);
     try {
-      const res = await axiosClient.get("/bookings");
-      const bookings = res.data || [];
+      const [bookRes, assignRes] = await Promise.all([
+        axiosClient.get(`/bookings?page=${targetPage}&size=${pagination.size}&sort=id,desc`),
+        axiosClient.get("/logistics/assignments").catch(() => ({ data: [] })),
+      ]);
 
-      if (bookings.length > 0) {
-        const mapped = bookings.map((b, idx) => ({
+      // Spring Data Page wraps list in 'content'
+      const pageData = bookRes.data;
+      const bookings = pageData?.content || [];
+      const assignments = assignRes.data || [];
+
+      const guideByBooking = {};
+      const pickupByBooking = {};
+      assignments.forEach((a) => {
+        if (a.bookingId != null) {
+          if (a.staff?.fullName) guideByBooking[a.bookingId] = a.staff.fullName;
+          if (a.pickupLocation) pickupByBooking[a.bookingId] = a.pickupLocation;
+        }
+      });
+
+      setLogisticsList(
+        bookings.map((b) => ({
           id: b.id,
-          clientId: b.clientId || 1,
-          tourPackageId: b.tourPackageId || 1,
-          bookingCode:
-            b.bookingCode || `TRK-2026-${String(idx + 1).padStart(2, "0")}`,
+          clientId: b.clientId,
+          tourPackageId: b.tourPackageId,
+          bookingCode: b.bookingCode,
           clientName: b.clientName || "Lead Client",
           routeName: b.packageName || "Custom Route",
-          assignedGuide: "Assigned Lead Guide",
-          transferLocation: b.vehicleDetails || "Airport / Hotel Transfer",
+          assignedGuide: guideByBooking[b.id] || "Unassigned",
+          transferLocation: pickupByBooking[b.id] || b.vehicleDetails || "Airport transfer",
           travelDate: b.travelDate,
-          transferDateTime: b.travelDate
-            ? `${b.travelDate} 06:00 AM`
-            : "2026-09-25 06:00 AM",
-          gearStatus: "Preparing",
+          transferDateTime: b.travelDate ? `${b.travelDate}` : "",
+          gearStatus: guideByBooking[b.id] ? "Assigned" : "Preparing",
           bookingStatus: b.bookingStatus || "PENDING",
           numberOfTravelers: b.numberOfTravelers || 1,
           totalAmount: b.totalAmount || 0,
           currency: b.currency || "USD",
-        }));
-        setLogisticsList(mapped);
-      } else {
-        setLogisticsList([
-          {
-            id: 102,
-            clientId: 1,
-            tourPackageId: 1,
-            bookingCode: "TRK-2026-01",
-            clientName: "Elena Rostova",
-            routeName: "Manaslu Circuit Expedition",
-            assignedGuide: "Pemba Norbu",
-            transferLocation: "Hotel Yak & Yeti, Kathmandu",
-            travelDate: "2026-09-14",
-            transferDateTime: "2026-09-14 06:00 AM",
-            gearStatus: "Preparing",
-            bookingStatus: "CONFIRMED",
-            numberOfTravelers: 2,
-            totalAmount: 5000,
-            currency: "USD",
-          },
-        ]);
-      }
-    } catch {
-      // Quietly fallback
+          specialRequest: b.specialRequest,
+          vehicleDetails: b.vehicleDetails,
+        }))
+      );
+
+      setPagination((prev) => ({
+        ...prev,
+        page: pageData.number ?? targetPage,
+        totalPages: pageData.totalPages ?? 0,
+        totalElements: pageData.totalElements ?? 0,
+      }));
+    } catch (err) {
+      setErrorBanner(err.response?.data?.message || "Could not load logistics.");
+      setLogisticsList([]);
+    } finally {
+      setIsLoadingTable(false);
     }
   };
 
   useEffect(() => {
-    fetchLiveLogistics();
+    fetchLiveLogistics(0);
+    const onUpdated = () => fetchLiveLogistics(pagination.page);
+    window.addEventListener("bookings-updated", onUpdated);
+    return () => window.removeEventListener("bookings-updated", onUpdated);
   }, []);
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 0 && newPage < pagination.totalPages) {
+      fetchLiveLogistics(newPage);
+    }
+  };
 
   const handleDeleteBooking = async (trip) => {
     const confirmMsg = `Are you sure you want to cancel and delete expedition "${trip.bookingCode}" for ${trip.clientName}?`;
     if (window.confirm(confirmMsg)) {
       try {
         await bookingApi.deleteBooking(trip.id);
-        fetchLiveLogistics(); // <-- Refreshes the logistics table
+        fetchLiveLogistics(pagination.page);
       } catch (err) {
         alert(
-          err.response?.data?.message || "Failed to delete trip from database.",
+          err.response?.data?.message || "Failed to delete trip from database."
         );
       }
     }
@@ -118,11 +146,11 @@ export default function LogisticsBoard() {
     try {
       await axiosClient.post("/logistics/briefings/dispatch");
       setSuccessBanner(
-        `Briefing packet dispatched to guide and field staff for ${row.clientName}!`,
+        `Briefing packet dispatched to guide and field staff for ${row.clientName}!`
       );
     } catch (err) {
       setErrorBanner(
-        err.response?.data?.message || "Failed to dispatch briefing.",
+        err.response?.data?.message || "Failed to dispatch briefing."
       );
     } finally {
       setLoadingIds((prev) => prev.filter((id) => id !== row.id));
@@ -130,7 +158,7 @@ export default function LogisticsBoard() {
     }
   };
 
-  // 3. Confirm Booking (Updates status to CONFIRMED and triggers Spring Boot AlertService email)
+  // 3. Confirm Booking
   const handleConfirmAndAlert = async (row) => {
     setErrorBanner("");
     setSuccessBanner("");
@@ -139,12 +167,12 @@ export default function LogisticsBoard() {
     try {
       await bookingApi.confirmBooking(row.id, row);
       setSuccessBanner(
-        `Booking ${row.bookingCode} confirmed! Automated email alert triggered to client.`,
+        `Booking ${row.bookingCode} confirmed! Automated email alert triggered to client.`
       );
-      await fetchLiveLogistics();
+      await fetchLiveLogistics(pagination.page);
     } catch (err) {
       setErrorBanner(
-        err.response?.data?.message || "Failed to confirm booking on backend.",
+        err.response?.data?.message || "Failed to confirm booking on backend."
       );
     } finally {
       setLoadingIds((prev) => prev.filter((id) => id !== row.id));
@@ -152,7 +180,7 @@ export default function LogisticsBoard() {
     }
   };
 
-  // Filter rows
+  // Filter current page items
   const filteredRows = logisticsList.filter((item) => {
     const matchesSearch =
       item.clientName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -165,6 +193,9 @@ export default function LogisticsBoard() {
     if (filterTab === "CONFIRMED") return item.bookingStatus === "CONFIRMED";
     return true;
   });
+
+  const startRecord = pagination.totalElements === 0 ? 0 : pagination.page * pagination.size + 1;
+  const endRecord = Math.min((pagination.page + 1) * pagination.size, pagination.totalElements);
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -179,13 +210,24 @@ export default function LogisticsBoard() {
             and client notification.
           </p>
         </div>
-        <button
-          onClick={fetchLiveLogistics}
-          className="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-slate-700 hover:border-slate-300 shadow-xs cursor-pointer transition"
-          title="Refresh Board"
-        >
-          <RotateCw size={16} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openNewTripModal}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow-xs"
+          >
+            <Plus size={15} />
+            <span>+ New Dossier</span>
+          </button>
+          <button
+            onClick={() => fetchLiveLogistics(pagination.page)}
+            disabled={isLoadingTable}
+            className="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-slate-700 hover:border-slate-300 shadow-xs cursor-pointer transition disabled:opacity-50"
+            title="Refresh Board"
+          >
+            <RotateCw size={16} className={isLoadingTable ? "animate-spin text-sky-500" : ""} />
+          </button>
+        </div>
       </div>
 
       {/* Error Alert */}
@@ -231,7 +273,7 @@ export default function LogisticsBoard() {
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Filter by client, guide, or route..."
+            placeholder="Filter current view by client, guide, or route..."
             className="w-full pl-9 pr-4 py-2 bg-slate-50/70 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-sky-500 focus:outline-none transition"
           />
         </div>
@@ -401,7 +443,7 @@ export default function LogisticsBoard() {
                             <UserCheck size={14} className="text-emerald-600" />
                           </button>
 
-                          {/* 4. Confirm Status (Triggers Spring Boot Client Email Alert) */}
+                          {/* 4. Confirm Status */}
                           {!isConfirmed ? (
                             <button
                               type="button"
@@ -431,6 +473,41 @@ export default function LogisticsBoard() {
             </tbody>
           </table>
         </div>
+
+        {/* Server-side Pagination Bar */}
+        {pagination.totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50/50 gap-3">
+            <span className="text-xs text-slate-500">
+              Showing <strong className="text-slate-700">{startRecord}</strong> to{" "}
+              <strong className="text-slate-700">{endRecord}</strong> of{" "}
+              <strong className="text-slate-700">{pagination.totalElements}</strong> trips
+            </span>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={pagination.page === 0 || isLoadingTable}
+                onClick={() => handlePageChange(pagination.page - 1)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs"
+              >
+                <ChevronLeft size={14} /> Previous
+              </button>
+
+              <span className="text-xs font-bold text-slate-700 px-3 py-1 bg-white border border-slate-200 rounded-xl shadow-2xs">
+                {pagination.page + 1} / {pagination.totalPages}
+              </span>
+
+              <button
+                type="button"
+                disabled={pagination.page + 1 >= pagination.totalPages || isLoadingTable}
+                onClick={() => handlePageChange(pagination.page + 1)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Digital Paperwork & Document Vault Modal */}
@@ -452,8 +529,11 @@ export default function LogisticsBoard() {
         isOpen={isStaffAssignOpen}
         onClose={() => setIsStaffAssignOpen(false)}
         booking={selectedBookingForStaff}
-        onAssigned={fetchLiveLogistics}
+        onAssigned={() => fetchLiveLogistics(pagination.page)}
       />
+
+      {/* Internal Expedition Dossier Modal */}
+      <NewTripModal />
     </div>
   );
 }

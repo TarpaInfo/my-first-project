@@ -28,11 +28,11 @@ import { activityService, ACTIVITY_MODULES } from '../../api/activityService';
 
 const AVAILABLE_DOC_TYPES = [
   { id: 'PASSPORT', label: 'Passport Scan' },
-  { id: 'INSURANCE', label: 'Rescue Insurance' },
-  { id: 'PERMIT', label: 'TIMS / Entry Permit' },
-  { id: 'VOUCHER', label: 'Flight / Hotel Voucher' },
-  { id: 'VISA', label: 'Nepal Visa' },
-  { id: 'OTHER', label: 'Other Document' }
+  { id: 'INSURANCE_POLICY', label: 'Rescue Insurance' },
+  { id: 'PERMIT_SCAN', label: 'TIMS / Entry Permit' },
+  { id: 'NEPAL_VISA', label: 'Nepal Visa' },
+  { id: 'MEDICAL_CLEARANCE', label: 'Medical Clearance' },
+  { id: 'EXPENSE_RECEIPT', label: 'Other Document' }
 ];
 
 export default function NewTripModal() {
@@ -263,12 +263,20 @@ export default function NewTripModal() {
       setSuccess(`Trip ${bookingCode} confirmed! Dispatch emails sent to client and operations team.`);
       setTimeout(() => {
         closeNewTripModal();
-        window.location.reload();
+        window.dispatchEvent(new Event('bookings-updated'));
       }, 1500);
 
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Failed to record booking.';
-      setError(msg);
+      const apiMessage = err.response?.data?.message;
+      const status = err.response?.status;
+      if (status === 409) {
+        setError(apiMessage || 'This booking already exists.');
+        if (String(apiMessage || '').toLowerCase().includes('booking code')) {
+          refreshCode(category);
+        }
+      } else {
+        setError(apiMessage || err.message || 'Failed to record booking.');
+      }
     } finally {
       setLoading(false);
     }

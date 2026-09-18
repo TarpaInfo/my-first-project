@@ -34,12 +34,15 @@ export default function TripsManager() {
 
   useEffect(() => {
     fetchTrips();
+    const onUpdated = () => fetchTrips();
+    window.addEventListener('bookings-updated', onUpdated);
+    return () => window.removeEventListener('bookings-updated', onUpdated);
   }, []);
 
-  const filteredTrips = trips.filter(t => {
-    const matchesSearch = (t.customTripName || t.tripName || '').toLowerCase().includes(search.toLowerCase()) ||
-                          (t.leadClient || '').toLowerCase().includes(search.toLowerCase());
-    const matchesRegion = regionFilter === 'ALL' || t.region === regionFilter;
+  const filteredTrips = trips.filter((t) => {
+    const hay = `${t.packageName || ''} ${t.clientName || ''} ${t.bookingCode || ''}`.toLowerCase();
+    const matchesSearch = hay.includes(search.toLowerCase());
+    const matchesRegion = regionFilter === 'ALL' || (t.packageName || '').toLowerCase().includes(regionFilter.toLowerCase());
     return matchesSearch && matchesRegion;
   });
 
@@ -131,45 +134,45 @@ export default function TripsManager() {
                         <Compass size={16} />
                       </div>
                       <div>
-                        <p className="font-bold text-slate-800 text-xs">{t.customTripName || t.tripName}</p>
+                        <p className="font-bold text-slate-800 text-xs">{t.packageName || t.bookingCode}</p>
                         <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1 mt-0.5">
-                          <MapPin size={10} /> {t.region || 'Nepal Himalayas'}
+                          <MapPin size={10} /> {t.bookingCode}
                         </span>
                       </div>
                     </div>
                   </td>
 
                   <td className="py-4 px-6 font-semibold text-slate-700">
-                    {t.leadClient || 'Direct Client'}
+                    {t.clientName || 'Direct client'}
                   </td>
 
                   <td className="py-4 px-6 text-slate-500 font-medium">
                     <div className="flex items-center gap-1.5">
                       <Calendar size={13} className="text-slate-400" />
-                      <span>{t.startDate} → {t.endDate}</span>
+                      <span>{t.travelDate || 'TBD'}</span>
                     </div>
                   </td>
 
                   <td className="py-4 px-6 text-center font-bold text-slate-700">
                     <span className="inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-lg">
-                      <Users size={11} className="text-slate-400" /> {t.numberOfTrekkers || 1}
+                      <Users size={11} className="text-slate-400" /> {t.numberOfTravelers || 1}
                     </span>
                   </td>
 
                   <td className="py-4 px-6 text-center">
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                      t.status === 'COMPLETED' 
-                        ? 'bg-slate-100 text-slate-600' 
-                        : t.status === 'IN_PROGRESS' 
-                        ? 'bg-emerald-50 text-emerald-600' 
-                        : 'bg-sky-50 text-sky-600'
+                      t.bookingStatus === 'CANCELLED'
+                        ? 'bg-slate-100 text-slate-600'
+                        : t.bookingStatus === 'CONFIRMED'
+                        ? 'bg-emerald-50 text-emerald-600'
+                        : 'bg-amber-50 text-amber-600'
                     }`}>
-                      {t.status || 'SCHEDULED'}
+                      {t.bookingStatus || 'PENDING'}
                     </span>
                   </td>
 
                   <td className="py-4 px-6 text-right font-bold text-slate-800">
-                    ${(t.totalCost || 0).toLocaleString()}
+                    ${(Number(t.totalAmount) || 0).toLocaleString()}
                   </td>
                 </tr>
               ))

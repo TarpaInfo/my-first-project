@@ -11,10 +11,13 @@ import FinanceView from "./pages/financials/FinanceView";
 import DocumentVault from "./pages/documents/DocumentVault";
 import StaffDirectory from "./pages/members/StaffDirectory";
 import DepartureCalendar from "./pages/calendar/DepartureCalendar";
-import ModulePlaceholder from "./pages/common/ModulePlaceholder";
 import TripsManager from "./pages/dashboard/TripsManager";
 import PackagesManager from "./pages/packages/PackagesManager";
 import BookingRegistry from "./pages/bookings/BookingRegistry";
+import TransportView from "./pages/transport/TransportView";
+import HotelsView from "./pages/hotels/HotelsView";
+import ReportsView from "./pages/reports/ReportsView";
+import SettingsView from "./pages/settings/SettingsView";
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
@@ -37,79 +40,22 @@ export default function App() {
                   </ProtectedRoute>
                 }
               >
-                {/* Core Connected Hub */}
                 <Route index element={<DashboardHome />} />
                 <Route path="trips" element={<TripsManager />} />
                 <Route path="logistics" element={<LogisticsBoard />} />
                 <Route path="permits" element={<PermitsView />} />
                 <Route path="financials" element={<FinanceView />} />
                 <Route path="activities" element={<PackagesManager />} />
-
-                {/* Newly Connected Operational Modules */}
                 <Route path="documents" element={<DocumentVault />} />
                 <Route path="members" element={<StaffDirectory />} />
                 <Route path="calendar" element={<DepartureCalendar />} />
-
-                {/* Remaining Subsystems */}
-                <Route
-                  path="activities"
-                  element={
-                    <ModulePlaceholder
-                      title="Peak Activities"
-                      description="Catalog of technical peak climbing and high-altitude circuits."
-                    />
-                  }
-                />
-                <Route
-                  path="transport"
-                  element={
-                    <ModulePlaceholder
-                      title="Aviation & Fleet"
-                      description="Helicopter charters, baggage limits, and Lukla flight bookings."
-                    />
-                  }
-                />
-                <Route
-                  path="hotels"
-                  element={
-                    <ModulePlaceholder
-                      title="Lodges & Teahouses"
-                      description="Tea-house allotments and lodge vouchers."
-                    />
-                  }
-                />
-                <Route
-                  path="reports"
-                  element={
-                    <ModulePlaceholder
-                      title="Yield Analytics"
-                      description="Operations financial reporting and expedition margins."
-                    />
-                  }
-                />
-                <Route
-                  path="settings"
-                  element={
-                    <ModulePlaceholder
-                      title="Settings"
-                      description="System configurations and SMTP mail setup."
-                    />
-                  }
-                />
-              </Route>
-
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardLayout />}>
-                {/* Your existing original dashboard index */}
-                <Route index element={<DashboardHome />} />
-
-                {/* Dedicated Trip Bookings Page */}
                 <Route path="bookings" element={<BookingRegistry />} />
-
-                {/* Other existing routes */}
-                <Route path="logistics" element={<LogisticsBoard />} />
-                {/* ... */}
+                <Route path="transport" element={<TransportView />} />
+                <Route path="hotels" element={<HotelsView />} />
+                <Route path="reports" element={<ReportsView />} />
+                <Route path="settings" element={<SettingsView />} />
               </Route>
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </BrowserRouter>
         </AuthProvider>

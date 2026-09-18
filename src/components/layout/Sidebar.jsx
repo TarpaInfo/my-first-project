@@ -56,11 +56,6 @@ const MENU_GROUPS = [
         icon: Calendar,
       },
       {
-        name: "Peak Activities",
-        path: "/dashboard/activities",
-        icon: Mountain,
-      },
-      {
         name: "Transport & Flights",
         path: "/dashboard/transport",
         icon: Plane,

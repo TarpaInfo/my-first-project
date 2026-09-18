@@ -1,26 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { operationsApi } from '../../api/operationsApi';
-import { Calendar, Compass, MapPin, Users, ChevronRight } from 'lucide-react';
+import { Calendar, Users, AlertCircle } from 'lucide-react';
 
 export default function DepartureCalendar() {
   const [schedules, setSchedules] = useState([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    operationsApi.getDepartures().then(setSchedules).catch(() => {
-      setSchedules([
-        { id: 1, route: 'Everest Base Camp Trek (14 Days)', startDate: '2026-09-12', endDate: '2026-09-26', pax: 8, guide: 'Pasang Dawa Sherpa', status: 'CONFIRMED' },
-        { id: 2, route: 'Manaslu Circuit High Pass', startDate: '2026-09-18', endDate: '2026-10-04', pax: 6, guide: 'Pemba Norbu', status: 'SLOTS_OPEN' },
-        { id: 3, route: 'Annapurna Sanctuary Discovery', startDate: '2026-09-22', endDate: '2026-10-04', pax: 12, guide: 'Ang Tshering', status: 'CONFIRMED' },
-      ]);
-    });
+    operationsApi.getDepartures()
+      .then((rows) => {
+        setSchedules(rows || []);
+        setError('');
+      })
+      .catch((err) => {
+        setError(err.response?.data?.message || 'Could not load departures.');
+        setSchedules([]);
+      });
   }, []);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       <div>
-        <h1 className="text-xl font-bold text-slate-800">Autumn 2026 Departure Calendar</h1>
-        <p className="text-xs text-slate-400 mt-0.5">Commercial departure windows, Lukla twin-otter weather buffers, and team sizes.</p>
+        <h1 className="text-xl font-bold text-slate-800">Departure calendar</h1>
+        <p className="text-xs text-slate-400 mt-0.5">Travel dates from live bookings, with assigned guides when logistics has them.</p>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2">
+          <AlertCircle size={14} /> {error}
+        </div>
+      )}
+
+      {schedules.length === 0 && !error && (
+        <p className="text-xs text-slate-400">No departures scheduled yet.</p>
+      )}
 
       <div className="space-y-4">
         {schedules.map((trip) => (
@@ -28,25 +41,26 @@ export default function DepartureCalendar() {
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 rounded-2xl bg-sky-50 text-sky-600 flex flex-col items-center justify-center font-bold">
                 <Calendar size={18} />
-                <span className="text-[10px] mt-0.5 uppercase tracking-wider">{trip.startDate.split('-')[1]}/26</span>
+                <span className="text-[10px] mt-0.5 uppercase tracking-wider">
+                  {trip.startDate ? String(trip.startDate).slice(5, 7) : '--'}
+                </span>
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-800">{trip.route}</h3>
+                <p className="text-[10px] font-mono text-sky-600 mt-0.5">{trip.bookingCode} · {trip.clientName}</p>
                 <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                  <span>Window: <strong className="text-slate-700">{trip.startDate}</strong> to <strong className="text-slate-700">{trip.endDate}</strong></span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1"><Users size={12} /> {trip.pax} Trekkers</span>
+                  <span>Travel: <strong className="text-slate-700">{trip.startDate || 'TBD'}</strong></span>
+                  <span className="flex items-center gap-1"><Users size={12} /> {trip.pax} trekkers</span>
                 </div>
               </div>
             </div>
-
             <div className="flex items-center gap-4">
               <div className="text-right hidden md:block">
                 <p className="text-xs font-bold text-slate-800">{trip.guide}</p>
-                <p className="text-[10px] text-slate-400">Assigned Expedition Leader</p>
+                <p className="text-[10px] text-slate-400">Assigned expedition leader</p>
               </div>
               <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                trip.status === 'CONFIRMED' ? 'bg-emerald-50 text-emerald-600' : 'bg-sky-50 text-sky-600'
+                trip.status === 'CONFIRMED' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
               }`}>
                 {trip.status}
               </span>

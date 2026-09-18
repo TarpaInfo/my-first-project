@@ -10,15 +10,18 @@ import {
   FileText,
   FileCheck,
   Edit3,
-  Trash2
+  Trash2,
+  Plus
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { bookingApi } from '../../api/bookingApi';
+import { useModal } from '../../context/ModalContext';
 import TripDetailsModal from '../../components/modals/TripDetailsModal';
 import StaffPaperworkModal from '../../components/modals/StaffPaperworkModal';
 import EditTripModal from '../../components/modals/EditTripModal';
 
 export default function BookingRegistry() {
+  const { openNewTripModal } = useModal();
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -64,6 +67,9 @@ export default function BookingRegistry() {
 
   useEffect(() => {
     fetchBookings();
+    const onUpdated = () => fetchBookings();
+    window.addEventListener('bookings-updated', onUpdated);
+    return () => window.removeEventListener('bookings-updated', onUpdated);
   }, []);
 
   // 2. Delete / Cancel Booking Function
@@ -96,13 +102,24 @@ export default function BookingRegistry() {
             Complete company trip logs, client dossiers, compliance files, and itineraries.
           </p>
         </div>
-        <button 
-          onClick={fetchBookings}
-          className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs cursor-pointer transition w-fit"
-        >
-          <RotateCw size={13} className={loading ? 'animate-spin text-sky-500' : ''} />
-          <span>Refresh Bookings</span>
-        </button>
+        <div className="flex items-center gap-2 w-fit">
+          <button 
+            type="button"
+            onClick={openNewTripModal}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 shadow-xs cursor-pointer transition"
+          >
+            <Plus size={13} />
+            <span>New Booking</span>
+          </button>
+          <button 
+            type="button"
+            onClick={fetchBookings}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs cursor-pointer transition"
+          >
+            <RotateCw size={13} className={loading ? 'animate-spin text-sky-500' : ''} />
+            <span>Refresh Bookings</span>
+          </button>
+        </div>
       </div>
 
       {/* Bookings Card */}

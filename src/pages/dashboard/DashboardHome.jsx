@@ -3,28 +3,39 @@ import { useNavigate } from 'react-router-dom';
 import { 
   TrendingUp, 
   Users, 
-  Calendar, 
   CheckCircle2, 
   Clock, 
   DollarSign, 
   RotateCw,
   Plus,
   FileText,
-  Edit3
+  Edit3,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { bookingApi } from '../../api/bookingApi';
+import { useModal } from '../../context/ModalContext';
 import TripDetailsModal from '../../components/modals/TripDetailsModal';
 import EditTripModal from '../../components/modals/EditTripModal';
 import ThemeToggle from '../../components/ThemeToggle';
 
 export default function DashboardHome() {
   const navigate = useNavigate();
+  const { openNewTripModal } = useModal();
 
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
   const [syncFeedback, setSyncFeedback] = useState('');
+
+  // Pagination State (size = 5 so you can see pagination immediately)
+  const [pagination, setPagination] = useState({
+    page: 0,
+    size: 10,
+    totalPages: 0,
+    totalElements: 0,
+  });
 
   // Modal States
   const [inspectTrip, setInspectTrip] = useState(null);
@@ -33,12 +44,21 @@ export default function DashboardHome() {
   const [isEditOpen, setIsEditOpen] = useState(false);
 
   // 1. Data Fetch & Sync Handler
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (targetPage = pagination.page) => {
     setLoading(true);
     setSyncFeedback('');
     try {
-      const res = await axiosClient.get('/bookings');
-      setBookings(res.data || []);
+      const res = await axiosClient.get(`/bookings?page=${targetPage}&size=${pagination.size}&sort=id,desc`);
+      const pageData = res.data;
+      const extractedList = Array.isArray(pageData) ? pageData : (pageData?.content || []);
+      
+      setBookings(extractedList);
+      setPagination((prev) => ({
+        ...prev,
+        page: pageData.number ?? targetPage,
+        totalPages: pageData.totalPages ?? (extractedList.length > 0 ? 1 : 0),
+        totalElements: pageData.totalElements ?? extractedList.length,
+      }));
       setSyncFeedback('Synced!');
       setTimeout(() => setSyncFeedback(''), 2500);
     } catch (err) {
@@ -52,16 +72,23 @@ export default function DashboardHome() {
   };
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchDashboardData(0);
+    const onUpdated = () => fetchDashboardData(pagination.page);
+    window.addEventListener('bookings-updated', onUpdated);
+    return () => window.removeEventListener('bookings-updated', onUpdated);
   }, []);
 
-  // 2. New Dossier Handler
-  const handleNewDossier = () => {
-    // Navigates to booking registry or creation page
-    navigate('/booking-registry');
+  const handlePageChange = (newPage) => {
+    if (newPage >= 0 && newPage < pagination.totalPages) {
+      fetchDashboardData(newPage);
+    }
   };
 
-  // 3. Inline Quick Status Transition (CONFIRMED triggers automated email)
+  const handleNewDossier = () => {
+    openNewTripModal();
+  };
+
+  // 3. Inline Quick Status Transition
   const handleQuickStatusChange = async (trip, newStatus) => {
     if (trip.bookingStatus === newStatus) return;
     setUpdatingId(trip.id);
@@ -81,7 +108,7 @@ export default function DashboardHome() {
         vehicleDetails: trip.vehicleDetails,
       });
 
-      await fetchDashboardData();
+      await fetchDashboardData(pagination.page);
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to update expedition status');
     } finally {
@@ -89,21 +116,20 @@ export default function DashboardHome() {
     }
   };
 
+  const bookingList = Array.isArray(bookings) ? bookings : (bookings?.content || []);
+
   // Metrics Computations
-  const totalBookings = bookings.length;
-  const confirmedBookings = bookings.filter((b) => b.bookingStatus === 'CONFIRMED');
-  const pendingBookings = bookings.filter((b) => b.bookingStatus === 'PENDING');
+  const confirmedBookings = bookingList.filter((b) => b?.bookingStatus === 'CONFIRMED');
+  const pendingBookings = bookingList.filter((b) => b?.bookingStatus === 'PENDING');
   
   const totalRevenueUSD = confirmedBookings.reduce((sum, b) => {
-    const val = parseFloat(b.totalAmount) || 0;
+    const val = parseFloat(b?.totalAmount) || 0;
     return sum + val;
   }, 0);
 
   const totalTrekkers = confirmedBookings.reduce((sum, b) => {
-    return sum + (parseInt(b.numberOfTravelers, 10) || 0);
+    return sum + (parseInt(b?.numberOfTravelers, 10) || 0);
   }, 0);
-
-  const recentBookings = [...bookings].reverse().slice(0, 8);
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -137,6 +163,9 @@ export default function DashboardHome() {
     }
   };
 
+  const startRecord = pagination.totalElements === 0 ? 0 : pagination.page * pagination.size + 1;
+  const endRecord = Math.min((pagination.page + 1) * pagination.size, pagination.totalElements);
+
   return (
     <div className="min-h-screen bg-zinc-50/60 dark:bg-zinc-950 p-6 md:p-8 font-sans text-zinc-900 dark:text-zinc-100 space-y-8 transition-colors duration-200">
       
@@ -154,15 +183,12 @@ export default function DashboardHome() {
           </p>
         </div>
 
-        {/* Action Controls: ThemeToggle + Sync + New Dossier */}
         <div className="flex items-center gap-2.5">
-          {/* Red Mark: Theme Selector */}
           <ThemeToggle />
 
-          {/* Orange Mark: Sync Action */}
           <button 
             type="button"
-            onClick={fetchDashboardData}
+            onClick={() => fetchDashboardData(pagination.page)}
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-sm font-medium text-zinc-800 dark:text-zinc-200 shadow-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/80 transition cursor-pointer disabled:opacity-50"
           >
@@ -170,7 +196,6 @@ export default function DashboardHome() {
             <span>{syncFeedback ? syncFeedback : 'Sync'}</span>
           </button>
           
-          {/* Yellow Mark: New Dossier Action */}
           <button 
             type="button"
             onClick={handleNewDossier}
@@ -184,8 +209,6 @@ export default function DashboardHome() {
 
       {/* 4-Column KPI Metric Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        
-        {/* Confirmed Revenue */}
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Confirmed Revenue</span>
@@ -203,7 +226,6 @@ export default function DashboardHome() {
           </div>
         </div>
 
-        {/* Confirmed Trips */}
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Confirmed Trips</span>
@@ -219,7 +241,6 @@ export default function DashboardHome() {
           </div>
         </div>
 
-        {/* Field Trekkers */}
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Field Trekkers</span>
@@ -235,7 +256,6 @@ export default function DashboardHome() {
           </div>
         </div>
 
-        {/* Pending Approvals */}
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Pending Approvals</span>
@@ -250,7 +270,6 @@ export default function DashboardHome() {
             </p>
           </div>
         </div>
-
       </div>
 
       {/* Main Ledger Table Card */}
@@ -262,9 +281,13 @@ export default function DashboardHome() {
               Instant operations ledger. Confirming a booking auto-dispatches the email dossier.
             </p>
           </div>
-          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-md border border-zinc-200 dark:border-zinc-700 font-mono w-fit">
-            Showing {recentBookings.length} entries
-          </span>
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard/bookings')}
+            className="text-xs font-medium text-sky-600 hover:text-sky-700 bg-sky-50 dark:bg-sky-950/40 dark:text-sky-400 px-2.5 py-1 rounded-md border border-sky-100 dark:border-sky-800 cursor-pointer"
+          >
+            Open booking registry
+          </button>
         </div>
 
         <div className="overflow-x-auto">
@@ -282,25 +305,22 @@ export default function DashboardHome() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {recentBookings.length === 0 ? (
+              {bookingList.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-sm text-zinc-500 dark:text-zinc-400">
                     No active bookings found in the database.
                   </td>
                 </tr>
               ) : (
-                recentBookings.map((trip) => {
+                bookingList.map((trip) => {
                   const isUpdating = updatingId === trip.id;
 
                   return (
                     <tr key={trip.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors">
-                      
-                      {/* Booking Code */}
                       <td className="py-4 px-6 font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                         {trip.bookingCode}
                       </td>
 
-                      {/* Client */}
                       <td className="py-4 px-6">
                         <span className="font-medium text-zinc-900 dark:text-zinc-100 block">
                           {trip.clientName || 'Lead Trekker'}
@@ -310,7 +330,6 @@ export default function DashboardHome() {
                         </span>
                       </td>
 
-                      {/* Route */}
                       <td className="py-4 px-6">
                         <span className="text-zinc-900 dark:text-zinc-100 font-medium block max-w-xs truncate">
                           {trip.packageName || 'Himalayan Expedition'}
@@ -320,22 +339,18 @@ export default function DashboardHome() {
                         </span>
                       </td>
 
-                      {/* Travel Date */}
                       <td className="py-4 px-6 text-zinc-600 dark:text-zinc-300 text-xs font-mono">
                         {trip.travelDate}
                       </td>
 
-                      {/* Pricing */}
                       <td className="py-4 px-6 font-mono font-medium text-zinc-900 dark:text-zinc-100 text-xs">
                         ${parseFloat(trip.totalAmount || 0).toLocaleString()} {trip.currency || 'USD'}
                       </td>
 
-                      {/* Status Badge */}
                       <td className="py-4 px-6">
                         {getStatusBadge(trip.bookingStatus)}
                       </td>
 
-                      {/* Quick Status Actions */}
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-1.5">
                           {trip.bookingStatus !== 'CONFIRMED' && (
@@ -362,7 +377,6 @@ export default function DashboardHome() {
                         </div>
                       </td>
 
-                      {/* Action Icons */}
                       <td className="py-4 px-6 text-right">
                         <div className="inline-flex items-center gap-1">
                           <button
@@ -389,7 +403,6 @@ export default function DashboardHome() {
                           </button>
                         </div>
                       </td>
-
                     </tr>
                   );
                 })
@@ -397,23 +410,54 @@ export default function DashboardHome() {
             </tbody>
           </table>
         </div>
+
+        {/* Dashboard Pagination Bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 gap-3">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            Showing <strong className="text-zinc-800 dark:text-zinc-200">{startRecord}</strong> to{' '}
+            <strong className="text-zinc-800 dark:text-zinc-200">{endRecord}</strong> of{' '}
+            <strong className="text-zinc-800 dark:text-zinc-200">{pagination.totalElements}</strong> entries
+          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={pagination.page === 0 || loading}
+              onClick={() => handlePageChange(pagination.page - 1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 text-xs font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+
+            <span className="text-xs font-mono font-bold text-zinc-800 dark:text-zinc-200 px-3 py-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-2xs">
+              Page {pagination.page + 1} of {Math.max(pagination.totalPages, 1)}
+            </span>
+
+            <button
+              type="button"
+              disabled={pagination.page + 1 >= pagination.totalPages || loading}
+              onClick={() => handlePageChange(pagination.page + 1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 text-xs font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Dossier Inspection Modal */}
+      {/* Modals */}
       <TripDetailsModal
         isOpen={isInspectOpen}
         onClose={() => setIsInspectOpen(false)}
         trip={inspectTrip}
       />
 
-      {/* Expedition Edit Modal */}
       <EditTripModal
         isOpen={isEditOpen}
         onClose={() => setIsEditOpen(false)}
         trip={editTrip}
-        onUpdated={fetchDashboardData}
+        onUpdated={() => fetchDashboardData(pagination.page)}
       />
-
     </div>
   );
 }

@@ -22,7 +22,8 @@ import {
   FileCheck,
   CheckCircle2,
   AlertCircle,
-  Briefcase
+  Briefcase,
+  Loader2
 } from 'lucide-react';
 import { documentApi } from '../../api/documentApi';
 import { activityItineraryApi } from '../../api/activityItineraryApi';
@@ -45,6 +46,7 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
   // Document Vault records
   const [documents, setDocuments] = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
+  const [openingDocId, setOpeningDocId] = useState(null);
 
   // Field Staff & Logistics Assignments
   const [assignments, setAssignments] = useState([]);
@@ -52,7 +54,7 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
 
   useEffect(() => {
     if (isOpen && trip?.id) {
-      // 1. Fetch Day-by-Day Itinerary from activity controller
+      // 1. Fetch Day-by-Day Itinerary
       setLoadingItinerary(true);
       activityItineraryApi.getItineraryForBooking(trip)
         .then((data) => setItineraryDays(data || []))
@@ -85,10 +87,47 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  const isPaid = trip.paymentStatus === 'PAID';
-  const totalAmount = trip.totalAmount || (trip.numberOfTravelers || 1) * 3500;
+  // Authenticated file viewing via Blob URL
+  const handleInspectDocument = async (doc) => {
+    setOpeningDocId(doc.id);
+    try {
+      const url = documentApi.getDownloadUrl(doc.storedFileName);
+      const token = localStorage.getItem('satori_token');
+      
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!res.ok) throw new Error('Could not access document from server');
+
+      const blob = await res.blob();
+      const fileBlob = doc.contentType ? new Blob([blob], { type: doc.contentType }) : blob;
+      const objectUrl = window.URL.createObjectURL(fileBlob);
+
+      const previewTab = window.open(objectUrl, '_blank');
+      if (!previewTab) {
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.setAttribute('download', doc.originalFileName || doc.storedFileName);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+
+      setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60000);
+    } catch (err) {
+      alert(`Failed to load document: ${err.message}`);
+    } finally {
+      setOpeningDocId(null);
+    }
+  };
+
+  const isPaid = trip.bookingStatus === 'CONFIRMED' || trip.paymentStatus === 'PAID';
+  const totalAmount = trip.totalAmount || (trip.numberOfTravelers || 1) * 2500;
   const depositPaid = isPaid ? totalAmount : totalAmount * 0.3;
   const balanceDue = isPaid ? 0 : totalAmount - depositPaid;
+
+  const activeAssignment = assignments.length > 0 ? assignments[0] : null;
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto animate-in fade-in duration-150">
@@ -160,7 +199,7 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
             <div>
               <span className="block text-[9px] font-bold text-slate-400 uppercase">Rendezvous Point</span>
               <span className="font-semibold text-slate-700 truncate block">
-                {trip.transferLocation || 'Kathmandu Pickup / Hotel'}
+                {activeAssignment?.pickupLocation || trip.transferLocation || 'Tribhuvan International Airport (TIA)'}
               </span>
             </div>
             <div>
@@ -186,7 +225,7 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
                   <Footprints size={24} className="mx-auto mb-2 text-slate-300" />
                   <p className="font-semibold">No daily schedule recorded for this package.</p>
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    Itinerary days can be configured via the Compass button on the Logistics Matrix.
+                    Standard route parameters apply. Check logistics directives for deviations.
                   </p>
                 </div>
               ) : (
@@ -253,36 +292,38 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
                 Field Deployment & Crew Dispatch
               </span>
 
-              {/* Staff Assignments from LogisticsController */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                   <div className="flex items-center gap-2 text-sky-700 font-bold">
                     <UserCheck size={16} />
                     <span>Lead Expedition Guide</span>
                   </div>
-                  {assignments.length > 0 ? (
+                  {activeAssignment?.staff ? (
                     <div>
-                      <p className="font-bold text-slate-800 text-sm">{assignments[0].staff?.fullName || 'Assigned Lead Guide'}</p>
-                      <p className="text-slate-500 text-[11px]">Role: {assignments[0].staff?.role || 'Field Guide'} • Phone: {assignments[0].staff?.phoneNumber || 'N/A'}</p>
-                      <p className="text-slate-400 text-[10px] font-mono mt-0.5">License: {assignments[0].staff?.licenseNumber || 'Verified'}</p>
+                      <p className="font-bold text-slate-800 text-sm">{activeAssignment.staff.fullName}</p>
+                      <p className="text-slate-500 text-[11px]">Role: {String(activeAssignment.staff.role || '').replaceAll('_', ' ')} • Phone: {activeAssignment.staff.phoneNumber || 'N/A'}</p>
+                      <p className="text-slate-400 text-[10px] font-mono mt-0.5">License: {activeAssignment.staff.licenseNumber || 'Verified'}</p>
                     </div>
                   ) : (
-                    <p className="text-amber-600 text-[11px]">No lead guide assigned yet. Assign a guide from the Logistics Matrix.</p>
+                    <p className="text-amber-600 text-[11px]">No lead guide assigned yet. Use the green User icon on the board to assign crew.</p>
                   )}
                 </div>
 
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                   <div className="flex items-center gap-2 text-emerald-700 font-bold">
                     <Briefcase size={16} />
-                    <span>Support Porters & Sirdar</span>
+                    <span>Field Directive & Notes</span>
                   </div>
-                  <p className="font-bold text-slate-800 text-sm">2 Dedicated High-Altitude Porters</p>
-                  <p className="text-slate-500 text-[11px]">Load capacity: 25kg per member • Ratio: 2:1</p>
-                  <p className="text-slate-400 text-[10px]">Rendezvous: Trailhead / Lukla Airfield</p>
+                  <p className="font-semibold text-slate-700 text-xs">
+                    {activeAssignment?.operationalNotes || trip.specialRequest || 'Standard high-altitude trekking protocols apply.'}
+                  </p>
+                  <p className="text-slate-400 text-[10px]">
+                    Briefing status: {activeAssignment?.briefingSent ? '✓ Dispatch Transmitted' : 'Pending Guide Confirmation'}
+                  </p>
                 </div>
               </div>
 
-              {/* Transport, Vehicles & Domestic Flights */}
+              {/* Transport & Vehicles */}
               <div className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3">
                 <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px] block">
                   Ground & Air Travel Coordinates
@@ -291,19 +332,23 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
                   <div className="p-3 bg-slate-50/70 border border-slate-100 rounded-xl space-y-1">
                     <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
                       <Car size={14} className="text-sky-500" />
-                      <span>Airport Pickup & Ground Transfer</span>
+                      <span>Rendezvous & Vehicle Transfer</span>
                     </div>
-                    <p className="text-slate-600 font-semibold">{trip.transferLocation || 'Tribhuvan International Airport (TIA)'}</p>
-                    <p className="text-slate-400 text-[10px]">Vehicle: Private HiAce Van (Ba 2 Kha 4521)</p>
+                    <p className="text-slate-700 font-semibold">
+                      {activeAssignment?.pickupLocation || trip.transferLocation || 'Kathmandu Airport (TIA)'}
+                    </p>
+                    <p className="text-slate-400 text-[10px]">
+                      Vehicle: {activeAssignment?.vehicleDetails || trip.vehicleDetails || 'Dedicated Operations Transfer'}
+                    </p>
                   </div>
 
                   <div className="p-3 bg-slate-50/70 border border-slate-100 rounded-xl space-y-1">
                     <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
                       <Plane size={14} className="text-rose-500" />
-                      <span>Domestic Flights</span>
+                      <span>Domestic Mountain Flight</span>
                     </div>
-                    <p className="text-slate-600 font-semibold">Kathmandu (KTM) ⇄ Lukla (LUA)</p>
-                    <p className="text-slate-400 text-[10px]">Carrier: Tara Air / Summit Air (Vouchers attached in Vault)</p>
+                    <p className="text-slate-700 font-semibold">Kathmandu (KTM) ⇄ Sector Airfield</p>
+                    <p className="text-slate-400 text-[10px]">Carrier vouchers & e-tickets stored in the Document Vault</p>
                   </div>
                 </div>
               </div>
@@ -347,15 +392,19 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
                         </div>
                       </div>
 
-                      <a
-                        href={doc.fileDownloadUri || documentApi.getDownloadUrl(doc.storedFileName)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 text-sky-600 hover:bg-sky-100 rounded-xl font-bold transition text-[11px]"
+                      <button
+                        type="button"
+                        disabled={openingDocId === doc.id}
+                        onClick={() => handleInspectDocument(doc)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 text-sky-600 hover:bg-sky-100 rounded-xl font-bold transition text-[11px] cursor-pointer disabled:opacity-50"
                       >
-                        <ExternalLink size={12} />
-                        <span>Inspect File</span>
-                      </a>
+                        {openingDocId === doc.id ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <ExternalLink size={12} />
+                        )}
+                        <span>{openingDocId === doc.id ? 'Loading...' : 'Inspect File'}</span>
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -373,27 +422,27 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
                   <span className="block text-[10px] font-bold text-slate-400 uppercase">Total Invoice</span>
-                  <span className="text-lg font-bold text-slate-800">${totalAmount.toLocaleString()} USD</span>
+                  <span className="text-lg font-bold text-slate-800">${Number(totalAmount).toLocaleString()} USD</span>
                   <span className="text-[10px] text-slate-400 block mt-0.5">Includes TIMS & Park Fees</span>
                 </div>
 
                 <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
                   <span className="block text-[10px] font-bold text-emerald-600 uppercase">Amount Cleared</span>
-                  <span className="text-lg font-bold text-emerald-700">${depositPaid.toLocaleString()} USD</span>
-                  <span className="text-[10px] text-emerald-600 block mt-0.5">Verified Bank Transfer</span>
+                  <span className="text-lg font-bold text-emerald-700">${Number(depositPaid).toLocaleString()} USD</span>
+                  <span className="text-[10px] text-emerald-600 block mt-0.5">Verified Bank Settlement</span>
                 </div>
 
                 <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl">
                   <span className="block text-[10px] font-bold text-rose-600 uppercase">Outstanding Balance</span>
-                  <span className="text-lg font-bold text-rose-700">${balanceDue.toLocaleString()} USD</span>
-                  <span className="text-[10px] text-rose-500 block mt-0.5">Due at briefing meeting</span>
+                  <span className="text-lg font-bold text-rose-700">${Number(balanceDue).toLocaleString()} USD</span>
+                  <span className="text-[10px] text-rose-500 block mt-0.5">Due at Kathmandu briefing</span>
                 </div>
               </div>
 
               <div className="p-4 bg-slate-50/70 border border-slate-200 rounded-2xl flex items-center justify-between">
                 <div>
-                  <span className="font-bold text-slate-800 text-xs block">Invoice Reference: INV-{trip.bookingCode || '2026'}</span>
-                  <span className="text-[11px] text-slate-500">Receipt generated and archived in company financial ledger.</span>
+                  <span className="font-bold text-slate-800 text-xs block">Invoice Reference: INV-{trip.bookingCode || trip.id}</span>
+                  <span className="text-[11px] text-slate-500">Receipt archived in internal operations ledger.</span>
                 </div>
                 <span className={`px-3 py-1 rounded-xl font-bold text-xs ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                   {isPaid ? 'CLEARED' : 'PENDING FINAL SETTLEMENT'}
