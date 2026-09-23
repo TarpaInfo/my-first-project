@@ -11,7 +11,10 @@ import {
   FileCheck,
   Edit3,
   Trash2,
-  Plus
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  XCircle
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { bookingApi } from '../../api/bookingApi';
@@ -25,6 +28,15 @@ export default function BookingRegistry() {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+
+  // Server-Side Pagination State
+  const [pagination, setPagination] = useState({
+    page: 0,
+    size: 10,
+    totalPages: 0,
+    totalElements: 0,
+  });
 
   // Modals state
   const [inspectTrip, setInspectTrip] = useState(null);
@@ -36,13 +48,18 @@ export default function BookingRegistry() {
   const [editTrip, setEditTrip] = useState(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
 
-  // 1. Fetch live bookings from database
-  const fetchBookings = async () => {
+  // 1. Fetch live paginated bookings from Spring Boot backend
+  const fetchBookings = async (targetPage = pagination.page) => {
     setLoading(true);
     try {
-      const res = await axiosClient.get('/bookings');
-      const data = res.data || [];
-      setTrips(data.map((b, idx) => ({
+      const res = await axiosClient.get(
+        `/bookings?page=${targetPage}&size=${pagination.size}&sort=id,desc`
+      );
+      
+      const pageData = res.data;
+      const dataList = Array.isArray(pageData) ? pageData : (pageData?.content || []);
+
+      setTrips(dataList.map((b, idx) => ({
         id: b.id,
         clientId: b.clientId || 1,
         tourPackageId: b.tourPackageId || 1,
@@ -58,6 +75,13 @@ export default function BookingRegistry() {
         bookingStatus: b.bookingStatus || 'PENDING',
         paymentStatus: b.paymentStatus || 'UNPAID',
       })));
+
+      setPagination((prev) => ({
+        ...prev,
+        page: pageData.number ?? targetPage,
+        totalPages: pageData.totalPages ?? (dataList.length > 0 ? 1 : 0),
+        totalElements: pageData.totalElements ?? dataList.length,
+      }));
     } catch {
       setTrips([]);
     } finally {
@@ -66,11 +90,17 @@ export default function BookingRegistry() {
   };
 
   useEffect(() => {
-    fetchBookings();
-    const onUpdated = () => fetchBookings();
+    fetchBookings(0);
+    const onUpdated = () => fetchBookings(pagination.page);
     window.addEventListener('bookings-updated', onUpdated);
     return () => window.removeEventListener('bookings-updated', onUpdated);
   }, []);
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 0 && newPage < pagination.totalPages) {
+      fetchBookings(newPage);
+    }
+  };
 
   // 2. Delete / Cancel Booking Function
   const handleDeleteBooking = async (trip) => {
@@ -78,18 +108,26 @@ export default function BookingRegistry() {
     if (window.confirm(confirmMsg)) {
       try {
         await bookingApi.deleteBooking(trip.id);
-        fetchBookings();
+        fetchBookings(pagination.page);
       } catch (err) {
         alert(err.response?.data?.message || 'Failed to delete trip from database.');
       }
     }
   };
 
-  const filteredTrips = trips.filter((t) => 
-    t.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.bookingCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.routeName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredTrips = trips.filter((t) => {
+    const matchesSearch = 
+      t.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.bookingCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.routeName.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesStatus = statusFilter === 'ALL' || t.bookingStatus === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const startRecord = pagination.totalElements === 0 ? 0 : pagination.page * pagination.size + 1;
+  const endRecord = Math.min((pagination.page + 1) * pagination.size, pagination.totalElements);
 
   return (
     <div className="space-y-6">
@@ -113,8 +151,9 @@ export default function BookingRegistry() {
           </button>
           <button 
             type="button"
-            onClick={fetchBookings}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs cursor-pointer transition"
+            onClick={() => fetchBookings(pagination.page)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs cursor-pointer transition disabled:opacity-50"
           >
             <RotateCw size={13} className={loading ? 'animate-spin text-sky-500' : ''} />
             <span>Refresh Bookings</span>
@@ -125,24 +164,45 @@ export default function BookingRegistry() {
       {/* Bookings Card */}
       <div className="bg-white border border-slate-200/80 rounded-3xl overflow-hidden shadow-xs space-y-3">
         
-        {/* Search Bar */}
+        {/* Search & Status Filter Bar */}
         <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h2 className="font-bold text-slate-800 text-sm">All Bookings</h2>
             <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono text-[10px] font-bold">
-              {filteredTrips.length} Total
+              {pagination.totalElements} Total
             </span>
           </div>
 
-          <div className="relative w-full sm:w-80">
-            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by code, trekker name, or route..."
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-sky-500 focus:outline-none transition"
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto">
+            {/* Status Tabs */}
+            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl w-full sm:w-auto justify-center">
+              {['ALL', 'CONFIRMED', 'PENDING', 'CANCELLED'].map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setStatusFilter(tab)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    statusFilter === tab 
+                      ? 'bg-white text-slate-800 shadow-xs' 
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative w-full sm:w-72">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search code, trekker, route..."
+                className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-sky-500 focus:outline-none transition"
+              />
+            </div>
           </div>
         </div>
 
@@ -221,7 +281,7 @@ export default function BookingRegistry() {
                         </span>
                       ) : trip.bookingStatus === 'CANCELLED' ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 font-bold text-[10px]">
-                          CANCELLED
+                          <XCircle size={12} /> CANCELLED
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-bold text-[10px]">
@@ -230,11 +290,8 @@ export default function BookingRegistry() {
                       )}
                     </td>
 
-                    {/* Actions Column: Dossier, Paperwork, Edit, Delete */}
                     <td className="py-4 px-6 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="inline-flex items-center gap-1.5">
-                        
-                        {/* 1. Paperwork Vault */}
                         <button
                           type="button"
                           onClick={() => {
@@ -247,7 +304,6 @@ export default function BookingRegistry() {
                           <FileCheck size={14} className="text-sky-600" />
                         </button>
 
-                        {/* 2. Inspect Dossier */}
                         <button
                           type="button"
                           onClick={() => {
@@ -261,7 +317,6 @@ export default function BookingRegistry() {
                           <span>Dossier</span>
                         </button>
 
-                        {/* 3. Edit Trip */}
                         <button
                           type="button"
                           onClick={() => {
@@ -274,7 +329,6 @@ export default function BookingRegistry() {
                           <Edit3 size={13} className="text-amber-600" />
                         </button>
 
-                        {/* 4. Delete / Cancel Trip */}
                         <button
                           type="button"
                           onClick={() => handleDeleteBooking(trip)}
@@ -283,7 +337,6 @@ export default function BookingRegistry() {
                         >
                           <Trash2 size={13} />
                         </button>
-
                       </div>
                     </td>
                   </tr>
@@ -292,30 +345,60 @@ export default function BookingRegistry() {
             </tbody>
           </table>
         </div>
+
+        {/* Server-Side Pagination Bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50/50 gap-3">
+          <span className="text-xs text-slate-500">
+            Showing <strong className="text-slate-700">{startRecord}</strong> to{' '}
+            <strong className="text-slate-700">{endRecord}</strong> of{' '}
+            <strong className="text-slate-700">{pagination.totalElements}</strong> bookings
+          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={pagination.page === 0 || loading}
+              onClick={() => handlePageChange(pagination.page - 1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs"
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+
+            <span className="text-xs font-mono font-bold text-slate-700 px-3 py-1 bg-white border border-slate-200 rounded-xl shadow-2xs">
+              Page {pagination.page + 1} of {Math.max(pagination.totalPages, 1)}
+            </span>
+
+            <button
+              type="button"
+              disabled={pagination.page + 1 >= pagination.totalPages || loading}
+              onClick={() => handlePageChange(pagination.page + 1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Trip Inspector Dossier Modal */}
+      {/* Modals */}
       <TripDetailsModal
         isOpen={isInspectOpen}
         onClose={() => setIsInspectOpen(false)}
         trip={inspectTrip}
       />
 
-      {/* Document Vault Modal */}
       <StaffPaperworkModal
         isOpen={isPaperworkOpen}
         onClose={() => setIsPaperworkOpen(false)}
         booking={selectedBookingForDocs}
       />
 
-      {/* Edit Trip Modal */}
       <EditTripModal
         isOpen={isEditOpen}
         onClose={() => setIsEditOpen(false)}
         trip={editTrip}
-        onUpdated={fetchBookings}
+        onUpdated={() => fetchBookings(pagination.page)}
       />
-
     </div>
   );
 }

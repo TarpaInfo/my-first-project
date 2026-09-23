@@ -18,6 +18,8 @@ import TransportView from "./pages/transport/TransportView";
 import HotelsView from "./pages/hotels/HotelsView";
 import ReportsView from "./pages/reports/ReportsView";
 import SettingsView from "./pages/settings/SettingsView";
+import LiveOperationsFeed from './pages/operations/LiveOperationsFeed';
+import FinancialLedger from './pages/financial/FinancialLedger';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
@@ -54,6 +56,8 @@ export default function App() {
                 <Route path="hotels" element={<HotelsView />} />
                 <Route path="reports" element={<ReportsView />} />
                 <Route path="settings" element={<SettingsView />} />
+                <Route path="/dashboard/operations" element={<LiveOperationsFeed />} />
+                <Route path="/dashboard/financials" element={<FinancialLedger />} />
               </Route>
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

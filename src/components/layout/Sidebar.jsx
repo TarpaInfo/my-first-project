@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import {
   Compass,
@@ -14,7 +14,10 @@ import {
   FolderArchive,
   BarChart3,
   Settings,
+  Radio,
+  ShieldAlert
 } from "lucide-react";
+import { expeditionApi } from "../../api/expeditionApi";
 
 const MENU_GROUPS = [
   {
@@ -26,7 +29,17 @@ const MENU_GROUPS = [
         icon: LayoutDashboard,
         exact: true,
       },
-      { name: "Booking Registry", path: "/dashboard/bookings", icon: Calendar }, // <-- Dedicated trip bookings view
+      { 
+        name: "Live Trail Dispatch", 
+        path: "/dashboard/operations", 
+        icon: Radio,
+        hasPulse: true
+      },
+      { 
+        name: "Booking Registry", 
+        path: "/dashboard/bookings", 
+        icon: Calendar 
+      },
       { name: "Logistics Matrix", path: "/dashboard/logistics", icon: Truck },
       { name: "Permits & TIMS", path: "/dashboard/permits", icon: FileCheck2 },
       {
@@ -82,6 +95,28 @@ const MENU_GROUPS = [
 ];
 
 export default function Sidebar() {
+  const [hasEmergency, setHasEmergency] = useState(false);
+
+  // Poll for active emergency logs across the field
+  useEffect(() => {
+    const checkEmergencies = async () => {
+      try {
+        const data = await expeditionApi.getLogs("ALL", 0, 10);
+        const logs = data?.content || [];
+        const isCritical = logs.some(
+          (l) => l.severity === "CRITICAL_EMERGENCY" || l.heliRescueRequested
+        );
+        setHasEmergency(isCritical);
+      } catch {
+        setHasEmergency(false);
+      }
+    };
+
+    checkEmergencies();
+    const interval = setInterval(checkEmergencies, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <aside className="w-64 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex flex-col justify-between transition-colors duration-200">
       {/* Brand Header */}
@@ -114,15 +149,31 @@ export default function Sidebar() {
                   to={item.path}
                   end={item.exact}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                    `flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
                       isActive
-                        ? "bg-sky-50 text-sky-600"
+                        ? "bg-sky-50 text-sky-600 font-bold"
                         : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
                     }`
                   }
                 >
-                  <Icon size={16} />
-                  <span>{item.name}</span>
+                  <div className="flex items-center gap-3">
+                    <Icon
+                      size={16}
+                      className={item.hasPulse ? "text-sky-500" : ""}
+                    />
+                    <span>{item.name}</span>
+                  </div>
+
+                  {/* Show indicator for live telemetry / critical emergency alerts */}
+                  {item.path === "/dashboard/operations" && (
+                    hasEmergency ? (
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 text-[10px] font-bold animate-pulse">
+                        <ShieldAlert size={10} /> ALERT
+                      </span>
+                    ) : (
+                      <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
+                    )
+                  )}
                 </NavLink>
               );
             })}

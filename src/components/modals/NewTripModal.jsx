@@ -8,18 +8,16 @@ import {
   UserPlus, 
   AlertCircle, 
   CheckCircle2, 
-  RefreshCw,
-  Mountain,
-  Footprints,
-  Plane,
-  MapPin,
-  Hash,
-  UploadCloud,
-  FileCheck,
   Clock,
   ChevronDown,
   ChevronUp,
-  MailCheck
+  UploadCloud,
+  Hash,
+  MailCheck,
+  CalendarDays,
+  Mountain,
+  MapPin,
+  Utensils
 } from 'lucide-react';
 import { useModal } from '../../context/ModalContext';
 import { bookingApi } from '../../api/bookingApi';
@@ -35,10 +33,28 @@ const AVAILABLE_DOC_TYPES = [
   { id: 'EXPENSE_RECEIPT', label: 'Other Document' }
 ];
 
+const ACCOMMODATION_OPTIONS = [
+  { id: 'Hotel', label: 'Hotel' },
+  { id: 'Teahouse / Lodge', label: 'Teahouse / Lodge' },
+  { id: 'Lodge', label: 'Lodge' },
+  { id: 'Camping / Tent', label: 'Camping / Tent' },
+  { id: 'Homestay', label: 'Homestay' },
+  { id: 'Resort', label: 'Resort' },
+  { id: 'In Transit', label: 'In Transit / Flight' }
+];
+
+const MEAL_PLANS = [
+  { id: 'B,L,D', label: 'B,L,D (All Meals)' },
+  { id: 'B,B', label: 'B,B (Bed & Breakfast)' },
+  { id: 'B,D', label: 'B,D (Breakfast & Dinner)' },
+  { id: 'B,L', label: 'B,L (Breakfast & Lunch)' },
+  { id: 'EP', label: 'Room Only (No Meals)' }
+];
+
 export default function NewTripModal() {
   const { isNewTripOpen, closeNewTripModal } = useModal();
 
-  // 1. Red Module Category & Auto-Generated Sequential Reference
+  // 1. Module Category & Auto-Generated Code
   const [category, setCategory] = useState('TREKKING');
   const [bookingCode, setBookingCode] = useState('TRK-2026-01');
   const [codeLoading, setCodeLoading] = useState(false);
@@ -51,9 +67,19 @@ export default function NewTripModal() {
   const [itineraryPreview, setItineraryPreview] = useState([]);
   const [showItinerary, setShowItinerary] = useState(false);
 
-  // Manual override toggle if route is custom
+  // Dynamic Custom Itinerary Builder with Editable Day Label
   const [isCustomRoute, setIsCustomRoute] = useState(false);
   const [customRouteTitle, setCustomRouteTitle] = useState('');
+  const [customDays, setCustomDays] = useState([
+    { 
+      dayLabel: 'Day 1',
+      title: '', 
+      altitude: '', 
+      trekTimeDistance: '', 
+      accommodation: 'Hotel', 
+      meals: 'B,B' 
+    }
+  ]);
 
   // 3. Client Information
   const [clients, setClients] = useState([]);
@@ -85,7 +111,8 @@ export default function NewTripModal() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Load sequential code for active category
+  const isHeliTour = category === 'HELI_TOUR';
+
   const refreshCode = async (catKey) => {
     setCodeLoading(true);
     try {
@@ -99,7 +126,6 @@ export default function NewTripModal() {
     }
   };
 
-  // On modal open: reset forms and seed defaults
   useEffect(() => {
     if (isNewTripOpen) {
       setError('');
@@ -114,7 +140,6 @@ export default function NewTripModal() {
 
       refreshCode(category);
 
-      // Load existing clients
       bookingApi.getClients().then((res) => {
         setClients(res || []);
         if (res && res.length > 0) {
@@ -127,7 +152,6 @@ export default function NewTripModal() {
     }
   }, [isNewTripOpen]);
 
-  // When activity category changes: reload packages and recalculate sequential code
   useEffect(() => {
     if (isNewTripOpen) {
       refreshCode(category);
@@ -138,7 +162,7 @@ export default function NewTripModal() {
           if (items && items.length > 0) {
             setSelectedPackageId(items[0].id);
             setSelectedPackage(items[0]);
-            setPricePerPerson(items[0].price || 2500);
+            setPricePerPerson(items[0].price || (category === 'HELI_TOUR' ? 1200 : 2500));
             setIsCustomRoute(false);
           } else {
             setSelectedPackageId('');
@@ -150,7 +174,6 @@ export default function NewTripModal() {
     }
   }, [category, isNewTripOpen]);
 
-  // When selected package changes: load its day-by-day itinerary
   useEffect(() => {
     if (selectedPackageId && !isCustomRoute) {
       const pkg = packages.find((p) => String(p.id) === String(selectedPackageId));
@@ -166,6 +189,34 @@ export default function NewTripModal() {
   }, [selectedPackageId, isCustomRoute, category, packages]);
 
   if (!isNewTripOpen) return null;
+
+  // Handlers: Multi-Day Builder with editable label
+  const handleAddNextDay = () => {
+    const nextDayNum = customDays.length + 1;
+    setCustomDays([
+      ...customDays,
+      {
+        dayLabel: `Day ${nextDayNum}`,
+        title: '',
+        altitude: '',
+        trekTimeDistance: '',
+        accommodation: 'Teahouse / Lodge',
+        meals: 'B,L,D'
+      }
+    ]);
+  };
+
+  const handleRemoveDay = (index) => {
+    if (customDays.length <= 1) return;
+    const updated = customDays.filter((_, idx) => idx !== index);
+    setCustomDays(updated);
+  };
+
+  const handleUpdateDay = (index, field, value) => {
+    const copy = [...customDays];
+    copy[index][field] = value;
+    setCustomDays(copy);
+  };
 
   // Handlers: Travelers
   const addTraveler = () => {
@@ -195,7 +246,7 @@ export default function NewTripModal() {
 
   const totalAmount = Number(pricePerPerson || 0) * travelers.length;
 
-  // Submission handler
+  // Form Submission
   const handleSaveBooking = async (e) => {
     e.preventDefault();
     setError('');
@@ -207,7 +258,7 @@ export default function NewTripModal() {
       let finalClientId = selectedClientId;
       if (isNewClient) {
         if (!clientForm.fullName.trim() || !clientForm.email.trim()) {
-          throw new Error('Please enter the client name and email for automated alerts.');
+          throw new Error('Please enter client name and email.');
         }
         const created = await bookingApi.createClient(clientForm);
         finalClientId = created.id;
@@ -219,15 +270,23 @@ export default function NewTripModal() {
         if (!customRouteTitle.trim()) {
           throw new Error('Please enter the custom expedition route title.');
         }
+
+        const duration = isHeliTour ? 1 : Math.max(customDays.length, 1);
         const createdPkg = await bookingApi.createQuickPackage({
           title: customRouteTitle.trim(),
           price: pricePerPerson,
-          durationDays: 14
+          durationDays: duration
         });
         finalPackageId = createdPkg.id;
       }
 
-      // 3. Register booking
+      // 3. Register booking with full custom breakdown using the manual dayLabel
+      const itinerarySummary = isCustomRoute && !isHeliTour
+        ? customDays.map(d => 
+            `${d.dayLabel || 'Day'}: ${d.title || 'Stage'} (${d.altitude ? d.altitude + 'm' : 'N/A'}${d.trekTimeDistance ? ', ' + d.trekTimeDistance : ''}, ${d.accommodation}, ${d.meals})`
+          ).join(' | ')
+        : '';
+
       const payload = {
         bookingCode: bookingCode.trim(),
         clientId: Number(finalClientId),
@@ -236,9 +295,9 @@ export default function NewTripModal() {
         numberOfTravelers: Number(travelers.length),
         totalAmount: Number(totalAmount),
         currency: 'USD',
-        bookingStatus: 'CONFIRMED', // Set to CONFIRMED so Spring Boot triggers client & staff notification emails
+        bookingStatus: 'CONFIRMED',
         paymentStatus: 'PAID',
-        specialRequest: `Internal Entry | Emergency: ${clientForm.phone || 'Recorded'} | Members: ${travelers.map(t => t.fullName).filter(Boolean).join(', ')}`,
+        specialRequest: `Internal Entry | ${itinerarySummary ? `Itinerary: ${itinerarySummary} | ` : ''}Emergency: ${clientForm.phone || 'Recorded'} | Members: ${travelers.map(t => t.fullName).filter(Boolean).join(', ')}`,
         active: true,
         requiresAirportTransfer: true,
         vehicleDetails: 'Operations Airport Transfer Reserved'
@@ -246,7 +305,7 @@ export default function NewTripModal() {
 
       const createdBooking = await bookingApi.createBooking(payload);
 
-      // 4. Upload attached compliance files in parallel
+      // 4. Upload attached compliance files
       const validFiles = fileQueue.filter((item) => item.file !== null);
       if (validFiles.length > 0 && createdBooking?.id) {
         const uploads = validFiles.map((item) =>
@@ -260,23 +319,14 @@ export default function NewTripModal() {
         await Promise.allSettled(uploads);
       }
 
-      setSuccess(`Trip ${bookingCode} confirmed! Dispatch emails sent to client and operations team.`);
+      setSuccess(`Trip ${bookingCode} confirmed! Automated dispatch emails sent.`);
       setTimeout(() => {
         closeNewTripModal();
         window.dispatchEvent(new Event('bookings-updated'));
       }, 1500);
 
     } catch (err) {
-      const apiMessage = err.response?.data?.message;
-      const status = err.response?.status;
-      if (status === 409) {
-        setError(apiMessage || 'This booking already exists.');
-        if (String(apiMessage || '').toLowerCase().includes('booking code')) {
-          refreshCode(category);
-        }
-      } else {
-        setError(apiMessage || err.message || 'Failed to record booking.');
-      }
+      setError(err.response?.data?.message || err.message || 'Failed to record booking.');
     } finally {
       setLoading(false);
     }
@@ -320,11 +370,11 @@ export default function NewTripModal() {
         {/* Form Body */}
         <form onSubmit={handleSaveBooking} className="p-6 space-y-5 text-xs overflow-y-auto flex-1">
           
-          {/* 1. Activity Selector & Sequential Code Header */}
+          {/* 1. Activity Selector & Sequential Reference */}
           <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">
-                1. Select Red Activity Module
+                1. Select Activity Module
               </span>
               <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-sky-600 bg-white px-2.5 py-1 rounded-xl border border-slate-200">
                 <Hash size={13} />
@@ -332,7 +382,6 @@ export default function NewTripModal() {
               </div>
             </div>
 
-            {/* 5 Activity Selector Pills */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
               {Object.values(ACTIVITY_MODULES).map((mod) => {
                 const active = category === mod.key;
@@ -354,10 +403,11 @@ export default function NewTripModal() {
             </div>
           </div>
 
-          {/* 2. Package Catalog & Itinerary Preview */}
+          {/* 2. Package Catalog OR Dynamic Multi-Day Itinerary Builder */}
           <div className="p-4 bg-sky-50/40 border border-sky-100 rounded-2xl space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">
+              <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                <CalendarDays size={13} className="text-sky-600" />
                 2. Select Package Route & Itinerary
               </span>
               <button
@@ -365,7 +415,7 @@ export default function NewTripModal() {
                 onClick={() => setIsCustomRoute(!isCustomRoute)}
                 className="text-sky-600 font-bold hover:underline cursor-pointer text-[11px]"
               >
-                {isCustomRoute ? '← Choose From Catalog' : '+ Type Custom Route'}
+                {isCustomRoute ? '← Choose From Catalog' : '+ Custom Multi-Day Route'}
               </button>
             </div>
 
@@ -377,7 +427,7 @@ export default function NewTripModal() {
                   </div>
                 ) : packages.length === 0 ? (
                   <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-700">
-                    No active packages found in database for this category. Click "+ Type Custom Route" above.
+                    No active packages found in database for this category. Click "+ Custom Multi-Day Route" above.
                   </div>
                 ) : (
                   <select
@@ -392,57 +442,205 @@ export default function NewTripModal() {
                     ))}
                   </select>
                 )}
+
+                {/* Catalog Accordion Preview with Meals */}
+                {itineraryPreview.length > 0 && (
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowItinerary(!showItinerary)}
+                      className="flex items-center justify-between w-full p-2.5 bg-white border border-sky-100 rounded-xl text-slate-700 font-semibold cursor-pointer hover:bg-sky-50/50 transition"
+                    >
+                      <span className="flex items-center gap-1.5 text-[11px]">
+                        <Clock size={13} className="text-sky-600" />
+                        Verified Day-by-Day Schedule ({itineraryPreview.length} Days linked)
+                      </span>
+                      {showItinerary ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+
+                    {showItinerary && (
+                      <div className="mt-2 space-y-1.5 max-h-48 overflow-y-auto p-2 bg-white rounded-xl border border-slate-200">
+                        {itineraryPreview.map((d) => (
+                          <div key={d.id || d.dayNumber} className="flex items-start gap-2 p-1.5 border-b border-slate-50 last:border-0">
+                            <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-600 font-mono text-[9px] font-bold shrink-0">
+                              D{d.dayNumber}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-slate-800 text-[11px] truncate">{d.title}</p>
+                              <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                <span>{d.altitude ? `${d.altitude}m • ` : ''}{d.walkingHours || 'Trek'} • {d.accommodation || 'Lodge'}</span>
+                                <span className="font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                  {d.meals || 'B,L,D'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
-              <div>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g., Manaslu Tsum Valley Circuit Expedition"
-                  value={customRouteTitle}
-                  onChange={(e) => setCustomRouteTitle(e.target.value)}
-                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-medium"
-                />
-              </div>
-            )}
+              /* Custom Route with Multi-Day Dynamic Builder & Manual Day Label Input */
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                    Expedition / Trip Route Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={isHeliTour ? "e.g., Everest Base Camp Helicopter Day Flight" : "e.g., Manaslu & Tsum Valley Circuit Expedition"}
+                    value={customRouteTitle}
+                    onChange={(e) => setCustomRouteTitle(e.target.value)}
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-medium focus:border-sky-500"
+                  />
+                </div>
 
-            {/* Itinerary Dropdown Accordion */}
-            {itineraryPreview.length > 0 && !isCustomRoute && (
-              <div className="pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowItinerary(!showItinerary)}
-                  className="flex items-center justify-between w-full p-2.5 bg-white border border-sky-100 rounded-xl text-slate-700 font-semibold cursor-pointer hover:bg-sky-50/50 transition"
-                >
-                  <span className="flex items-center gap-1.5 text-[11px]">
-                    <Clock size={13} className="text-sky-600" />
-                    Verified Day-by-Day Schedule ({itineraryPreview.length} Days linked)
-                  </span>
-                  {showItinerary ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
+                {isHeliTour ? (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                      Flight Route & Landing Waypoints
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Kathmandu -> Lukla (Refuel) -> Kalapatthar (Landing) -> Hotel Everest View (Breakfast) -> Kathmandu"
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-700 text-[10px] uppercase tracking-wider">
+                        Day-by-Day Expedition Itinerary ({customDays.length} Stages)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleAddNextDay}
+                        className="flex items-center gap-1 px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-[11px] font-bold transition cursor-pointer shadow-xs"
+                      >
+                        <Plus size={12} /> Add Next Day
+                      </button>
+                    </div>
 
-                {showItinerary && (
-                  <div className="mt-2 space-y-1.5 max-h-48 overflow-y-auto p-2 bg-white rounded-xl border border-slate-200">
-                    {itineraryPreview.map((d) => (
-                      <div key={d.id || d.dayNumber} className="flex items-start gap-2 p-1.5 border-b border-slate-50 last:border-0">
-                        <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-600 font-mono text-[9px] font-bold shrink-0">
-                          D{d.dayNumber}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-slate-800 text-[11px] truncate">{d.title}</p>
-                          <p className="text-[10px] text-slate-400">
-                            {d.altitude ? `${d.altitude}m • ` : ''}{d.walkingHours || 'Trek'} • {d.accommodation || 'Lodge'}
-                          </p>
+                    <div className="space-y-2.5 max-h-64 overflow-y-auto p-2 bg-white border border-slate-200 rounded-2xl">
+                      {customDays.map((day, idx) => (
+                        <div key={idx} className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl space-y-2.5">
+                          {/* Day Header with EDITABLE Day / Multi-Day Input */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">Stage / Days:</label>
+                              <input
+                                type="text"
+                                required
+                                value={day.dayLabel}
+                                onChange={(e) => handleUpdateDay(idx, 'dayLabel', e.target.value)}
+                                placeholder="e.g. Day 1, Day 14-18, Rest Day"
+                                className="w-36 p-1 px-2.5 bg-white border border-sky-300 rounded-md text-xs font-bold text-sky-700 font-mono shadow-2xs focus:outline-none focus:ring-1 focus:ring-sky-500"
+                              />
+                            </div>
+
+                            {customDays.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveDay(idx)}
+                                className="text-rose-400 hover:text-rose-600 transition cursor-pointer p-1"
+                                title="Remove this day/stage"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Row 1: Manual Stage Title */}
+                          <div>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Stage details (e.g. Rest and preparation at Kathmandu / Rest & Acclimatization at Base Camp)"
+                              value={day.title}
+                              onChange={(e) => handleUpdateDay(idx, 'title', e.target.value)}
+                              className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:border-sky-500"
+                            />
+                          </div>
+
+                          {/* Row 2: Altitude, Trek Time/Distance, Accommodation Dropdown, Meal Plan Dropdown */}
+                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                            {/* Altitude */}
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">
+                                Altitude (m)
+                              </label>
+                              <input
+                                type="number"
+                                placeholder="e.g. 1350"
+                                value={day.altitude}
+                                onChange={(e) => handleUpdateDay(idx, 'altitude', e.target.value)}
+                                className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
+                              />
+                            </div>
+
+                            {/* Trek Time & Distance */}
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">
+                                Time & Distance
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 4hrs / 8km (5mi) or Rest"
+                                value={day.trekTimeDistance}
+                                onChange={(e) => handleUpdateDay(idx, 'trekTimeDistance', e.target.value)}
+                                className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                              />
+                            </div>
+
+                            {/* Accommodation Dropdown */}
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">
+                                Accommodation
+                              </label>
+                              <select
+                                value={day.accommodation}
+                                onChange={(e) => handleUpdateDay(idx, 'accommodation', e.target.value)}
+                                className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
+                              >
+                                {ACCOMMODATION_OPTIONS.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Meal Plan Dropdown */}
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">
+                                Meal Plan
+                              </label>
+                              <select
+                                value={day.meals || 'B,L,D'}
+                                onChange={(e) => handleUpdateDay(idx, 'meals', e.target.value)}
+                                className="w-full p-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold"
+                              >
+                                {MEAL_PLANS.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* 3. Client Information & Notification Dispatch */}
+          {/* 3. Lead Client Information */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
@@ -482,7 +680,7 @@ export default function NewTripModal() {
                 <input
                   type="email"
                   required
-                  placeholder="Client Email (Receives Automated Confirmation)"
+                  placeholder="Client Email"
                   value={clientForm.email}
                   onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })}
                   className="p-2.5 bg-white border border-slate-200 rounded-xl"
@@ -588,7 +786,7 @@ export default function NewTripModal() {
                   />
                   <input
                     type="text"
-                    placeholder="Dietary Notes / Requests"
+                    placeholder="Dietary Notes (e.g. Vegetarian, Gluten Free)"
                     value={t.dietaryReq}
                     onChange={(e) => updateTraveler(idx, 'dietaryReq', e.target.value)}
                     className="p-2 bg-white border border-slate-200 rounded-xl"
@@ -654,7 +852,7 @@ export default function NewTripModal() {
             </div>
           </div>
 
-          {/* Summary & Email Notice Card */}
+          {/* Summary & Dispatch Banner */}
           <div className="p-4 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
             <div>
               <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Booking Value</span>
@@ -662,7 +860,7 @@ export default function NewTripModal() {
             </div>
             <div className="flex items-center gap-2 text-[11px] text-emerald-400 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
               <MailCheck size={16} />
-              <span>Saving automatically triggers Client Confirmation & Internal Dispatch Email</span>
+              <span>Saving triggers Client Confirmation & Operations Dispatch</span>
             </div>
           </div>
 

@@ -23,10 +23,17 @@ import {
   CheckCircle2,
   AlertCircle,
   Briefcase,
-  Loader2
+  Loader2,
+  Radio,
+  ShieldAlert,
+  AlertTriangle,
+  RotateCw,
+  Plus
 } from 'lucide-react';
 import { documentApi } from '../../api/documentApi';
 import { activityItineraryApi } from '../../api/activityItineraryApi';
+import { expeditionApi } from '../../api/expeditionApi';
+import NewExpeditionLogModal from './NewExpeditionLogModal';
 import axiosClient from '../../api/axiosClient';
 
 const TABS = [
@@ -34,6 +41,7 @@ const TABS = [
   { id: 'LOGISTICS', label: 'Guide, Porter & Transport', icon: Car },
   { id: 'DOCUMENTS', label: 'Document Vault & Files', icon: FileCheck },
   { id: 'PAYMENT', label: 'Payment Ledger', icon: CreditCard },
+  { id: 'TELEMETRY', label: 'Operations & Field Logs', icon: Radio },
 ];
 
 export default function TripDetailsModal({ isOpen, onClose, trip }) {
@@ -51,6 +59,20 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
   // Field Staff & Logistics Assignments
   const [assignments, setAssignments] = useState([]);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
+
+  // Live Field Logs & Telemetry
+  const [logs, setLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+
+  const fetchTripLogs = () => {
+    if (!trip?.id) return;
+    setLoadingLogs(true);
+    expeditionApi.getLogsByBooking(trip.id)
+      .then((data) => setLogs(data || []))
+      .catch(() => setLogs([]))
+      .finally(() => setLoadingLogs(false));
+  };
 
   useEffect(() => {
     if (isOpen && trip?.id) {
@@ -74,6 +96,9 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
         .then((res) => setAssignments(res.data || []))
         .catch(() => setAssignments([]))
         .finally(() => setLoadingAssignments(false));
+
+      // 4. Fetch Live Telemetry & Incident Logs
+      fetchTripLogs();
     }
   }, [isOpen, trip]);
 
@@ -122,6 +147,41 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
     }
   };
 
+  const getSeverityBadge = (severity, heliRequested) => {
+    if (heliRequested || severity === 'CRITICAL_EMERGENCY') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+          <ShieldAlert size={11} /> Critical Alert / Heli
+        </span>
+      );
+    }
+    if (severity === 'MODERATE') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
+          <AlertTriangle size={11} /> Moderate
+        </span>
+      );
+    }
+    if (severity === 'MILD') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+          <Clock size={11} /> Mild
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+        Routine
+      </span>
+    );
+  };
+
+  const formatTimestamp = (ts) => {
+    if (!ts) return '';
+    const date = new Date(ts);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   const isPaid = trip.bookingStatus === 'CONFIRMED' || trip.paymentStatus === 'PAID';
   const totalAmount = trip.totalAmount || (trip.numberOfTravelers || 1) * 2500;
   const depositPaid = isPaid ? totalAmount : totalAmount * 0.3;
@@ -157,7 +217,7 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
         </div>
 
         {/* Tab Navigation Toolbar */}
-        <div className="px-6 pt-2 border-b border-slate-100 flex items-center gap-1 bg-slate-50/60">
+        <div className="px-6 pt-2 border-b border-slate-100 flex items-center gap-1 bg-slate-50/60 overflow-x-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             const isSelected = activeTab === tab.id;
@@ -166,7 +226,7 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 py-3 px-3.5 border-b-2 font-bold text-xs transition cursor-pointer ${
+                className={`flex items-center gap-1.5 py-3 px-3.5 border-b-2 font-bold text-xs transition cursor-pointer whitespace-nowrap ${
                   isSelected
                     ? 'border-sky-500 text-sky-600 bg-white rounded-t-xl'
                     : 'border-transparent text-slate-400 hover:text-slate-700'
@@ -174,6 +234,11 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
               >
                 <Icon size={14} />
                 <span>{tab.label}</span>
+                {tab.id === 'TELEMETRY' && logs.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 rounded-full bg-sky-100 text-sky-700 text-[10px]">
+                    {logs.length}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -451,6 +516,99 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
             </div>
           )}
 
+          {/* TAB 5: OPERATIONS & FIELD TELEMETRY LOGS */}
+          {activeTab === 'TELEMETRY' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-1">
+                <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">
+                  Live Field Telemetry & Check-Ins ({logs.length})
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={fetchTripLogs}
+                    disabled={loadingLogs}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer transition"
+                    title="Refresh Logs"
+                  >
+                    <RotateCw size={13} className={loadingLogs ? 'animate-spin text-sky-500' : ''} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsLogModalOpen(true)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                  >
+                    <Plus size={12} /> Post Check-In
+                  </button>
+                </div>
+              </div>
+
+              {loadingLogs ? (
+                <div className="p-8 text-center text-slate-400 text-xs">
+                  <Loader2 size={18} className="mx-auto mb-2 animate-spin text-sky-500" />
+                  Syncing trail telemetry...
+                </div>
+              ) : logs.length === 0 ? (
+                <div className="p-8 text-center border-2 border-dashed border-slate-200 rounded-2xl text-slate-400">
+                  <Radio size={24} className="mx-auto mb-2 text-slate-300" />
+                  <p className="font-semibold">No trail check-ins or incident reports filed for this trip yet.</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Click &ldquo;Post Check-In&rdquo; above to log an arrival waypoint, weather hold, or AMS medical alert.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {logs.map((log) => {
+                    const isAlert = log.heliRescueRequested || log.severity === 'CRITICAL_EMERGENCY';
+                    return (
+                      <div
+                        key={log.id}
+                        className={`p-3.5 rounded-2xl border transition ${
+                          isAlert 
+                            ? 'bg-rose-50/40 border-rose-200' 
+                            : 'bg-slate-50/70 border-slate-200/80'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                            <MapPin size={13} className="text-slate-400" />
+                            <span>{log.locationName}</span>
+                            {log.altitudeMeters && (
+                              <span className="text-slate-400 font-mono font-normal">
+                                ({log.altitudeMeters}m)
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {getSeverityBadge(log.severity, log.heliRescueRequested)}
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {formatTimestamp(log.timestamp)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {log.reportNotes && (
+                          <p className="text-slate-600 text-[11px] leading-relaxed mb-2 bg-white/70 p-2 rounded-xl border border-slate-100">
+                            {log.reportNotes}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100/80">
+                          <span className="flex items-center gap-1">
+                            <UserCheck size={11} /> Reported by: <strong className="text-slate-600">{log.reportedBy || 'Base Command'}</strong>
+                          </span>
+                          <span className="uppercase font-semibold tracking-wider text-slate-500">
+                            {log.logType?.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
 
         {/* Modal Footer */}
@@ -468,6 +626,16 @@ export default function TripDetailsModal({ isOpen, onClose, trip }) {
         </div>
 
       </div>
+
+      {/* Embedded New Log Modal */}
+      <NewExpeditionLogModal
+        isOpen={isLogModalOpen}
+        onClose={() => setIsLogModalOpen(false)}
+        onCreated={() => {
+          setIsLogModalOpen(false);
+          fetchTripLogs();
+        }}
+      />
     </div>
   );
 }
