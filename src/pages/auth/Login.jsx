@@ -163,7 +163,7 @@ export default function AuthPage() {
           <div className="w-12 h-12 rounded-2xl bg-sky-500 flex items-center justify-center text-white shadow-lg shadow-sky-500/25 mb-3">
             <Compass size={26} className="stroke-[2.5]" />
           </div>
-          <h2 className="text-xl font-bold text-slate-800 tracking-tight">Satori Adventures Nepal</h2>
+          <h2 className="text-xl font-bold text-slate-800 tracking-tight">XYZ Expeditions</h2>
           <p className="text-xs font-semibold text-slate-400 tracking-widest uppercase mt-0.5">
             Operations Portal
           </p>

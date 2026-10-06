@@ -126,7 +126,7 @@ export default function Sidebar() {
         </div>
         <div>
           <h1 className="text-sm font-bold text-slate-800 tracking-tight leading-tight">
-            Satori Adventures
+            XYZ Expeditions
           </h1>
           <p className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">
             Nepal Operations
